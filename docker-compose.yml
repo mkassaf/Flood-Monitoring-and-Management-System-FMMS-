@@ -1,0 +1,274 @@
+# FMMS — PoC stack
+#
+# Profiles:
+#   infra  — broker, DBs, observability (always needed)
+#   app    — application services (depend on infra)
+#
+# Usage:
+#   docker compose --profile infra up -d        # just infra
+#   docker compose --profile infra --profile app up -d   # everything
+#   make up         # equivalent to "infra"
+#   make up-all     # equivalent to "infra + app"
+
+name: fmms
+
+x-app-defaults: &app-defaults
+  restart: unless-stopped
+  env_file: .env
+  networks: [fmms]
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+
+services:
+
+  # ─────────────────────────────────────────────────────────────
+  # INFRASTRUCTURE
+  # ─────────────────────────────────────────────────────────────
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    profiles: [infra]
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-W", "3"]
+    networks: [fmms]
+
+  redpanda:
+    # Kafka-API-compatible broker. ADR-003 (PoC choice).
+    image: redpandadata/redpanda:v24.2.7
+    profiles: [infra]
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=redpanda:8082
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+      - "9644:9644"  # admin
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+    networks: [fmms]
+
+  postgres:
+    # TimescaleDB extension on PostgreSQL 16. PoC: one instance hosts both
+    # the operational DB and the telemetry hypertable, in separate schemas.
+    # Production splits these (see architecture.md §6.1).
+    image: timescale/timescaledb:2.17.0-pg16
+    profiles: [infra]
+    environment:
+      POSTGRES_DB: fmms
+      POSTGRES_USER: ${POSTGRES_USER:-fmms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fmms} -d fmms"]
+    networks: [fmms]
+
+  redis:
+    image: redis:7.4-alpine
+    profiles: [infra]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "redis-cli", "ping"]
+    networks: [fmms]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [infra]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks: [fmms]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: [infra]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: ""
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana:/etc/grafana/provisioning:ro
+    networks: [fmms]
+
+  # ─────────────────────────────────────────────────────────────
+  # APPLICATION SERVICES
+  # Implementation is created in Phase 3+ sprints. Each service
+  # builds from its own folder and reads its config from .env.
+  # ─────────────────────────────────────────────────────────────
+
+  sensor-simulator:
+    <<: *app-defaults
+    build: ./services/sensor-simulator
+    profiles: [app, demo]
+    depends_on:
+      mosquitto: { condition: service_healthy }
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      SIM_SENSOR_COUNT: ${SIM_SENSOR_COUNT:-1000}
+      SIM_NOMINAL_INTERVAL_S: 60
+      SIM_CRITICAL_INTERVAL_S: 5
+
+  ingestion-gateway:
+    <<: *app-defaults
+    build: ./services/ingestion-gateway
+    profiles: [app]
+    depends_on:
+      mosquitto: { condition: service_healthy }
+      redpanda:  { condition: service_healthy }
+      postgres:  { condition: service_healthy }
+    environment:
+      MQTT_HOST: mosquitto
+      KAFKA_BOOTSTRAP: redpanda:9092
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
+    ports:
+      - "8001:8000"  # /metrics, /healthz
+
+  telemetry-service:
+    <<: *app-defaults
+    build: ./services/telemetry-service
+    profiles: [app]
+    depends_on:
+      redpanda: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8002:8000"
+
+  rule-engine:
+    <<: *app-defaults
+    build: ./services/rule-engine
+    profiles: [app]
+    depends_on:
+      redpanda: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      REDIS_URL: redis://redis:6379/0
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
+    ports:
+      - "8003:8000"
+
+  alert-service:
+    <<: *app-defaults
+    build: ./services/alert-service
+    profiles: [app]
+    depends_on:
+      redpanda: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8004:8000"
+
+  geo-service:
+    <<: *app-defaults
+    build: ./services/geo-service
+    profiles: [app]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
+    ports:
+      - "8005:8000"
+
+  auth-service:
+    <<: *app-defaults
+    build: ./services/auth-service
+    profiles: [app]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+    ports:
+      - "8006:8000"
+
+  dashboard-bff:
+    <<: *app-defaults
+    build: ./services/dashboard-bff
+    profiles: [app]
+    depends_on:
+      postgres:     { condition: service_healthy }
+      redis:        { condition: service_healthy }
+      auth-service: { condition: service_started }
+      geo-service:  { condition: service_started }
+    environment:
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
+      REDIS_URL: redis://redis:6379/0
+      AUTH_SERVICE_URL: http://auth-service:8000
+      GEO_SERVICE_URL: http://geo-service:8000
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+    ports:
+      - "8080:8000"
+
+  frontend:
+    <<: *app-defaults
+    build: ./services/frontend
+    profiles: [app]
+    depends_on:
+      dashboard-bff: { condition: service_started }
+    environment:
+      VITE_BFF_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+
+# ─────────────────────────────────────────────────────────────
+
+networks:
+  fmms:
+    driver: bridge
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:
+  redpanda-data:
+  postgres-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
