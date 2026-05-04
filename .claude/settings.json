@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tar tzf *)",
+      "Read(//private/tmp/fmms-inspect/fmms/**)",
+      "Read(//private/tmp/fmms-inspect/fmms/services/ingestion-gateway/src/ingestion_gateway/**)",
+      "Read(//private/tmp/fmms-inspect/fmms/services/geo-service/src/geo_service/**)",
+      "Read(//private/tmp/fmms-inspect/fmms/services/geo-service/**)",
+      "Bash(tar xzf *)",
+      "Bash(chmod +x scripts/check_stack.sh)",
+      "Bash(docker compose *)",
+      "Bash(make up-all *)",
+      "Bash(mkdir -p /Users/assaf/phd/ai-projects/Flood-Monitoring-and-Management-System-FMMS-/secrets)",
+      "Bash(openssl genpkey *)",
+      "Bash(openssl rsa *)",
+      "Bash(python scripts/seed.py)",
+      "Bash(curl -s -X POST http://localhost:8006/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"area_manager@fmms.local\",\"password\":\"Test1234!\"}')",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"area_manager@fmms.local\",\"password\":\"Test1234!\"}')",
+      "Bash(docker exec *)",
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(curl -s http://localhost:8004/alerts)"
+    ]
+  }
+}

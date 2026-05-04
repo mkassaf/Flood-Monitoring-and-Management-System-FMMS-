@@ -1,0 +1,43 @@
+[project]
+name = "sensor-simulator"
+version = "0.1.0"
+description = "Synthetic MQTT sensor traffic generator"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic ~= 2.9",
+    "pydantic-settings ~= 2.6",
+    "structlog ~= 24.4",
+    "prometheus-client ~= 0.21",
+    "fastapi ~= 0.115",
+    "uvicorn[standard] ~= 0.32",
+    "codecarbon ~= 2.7",
+    "paho-mqtt ~= 2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest ~= 8.3",
+    "pytest-asyncio ~= 0.24",
+    "ruff ~= 0.7",
+    "mypy ~= 1.13",
+    "testcontainers ~= 4.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "RET", "SIM"]
+ignore = ["S101"]  # asserts in tests are fine
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

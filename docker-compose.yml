@@ -185,6 +185,7 @@ services:
       postgres: { condition: service_healthy }
     environment:
       KAFKA_BOOTSTRAP: redpanda:9092
+      ALERT_KAFKA_BOOTSTRAP: redpanda:9092
       REDIS_URL: redis://redis:6379/0
       POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
     ports:
@@ -226,6 +227,9 @@ services:
       POSTGRES_DSN: postgres://${POSTGRES_USER:-fmms}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/fmms
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+    volumes:
+      - ./secrets/jwt_private_key:/run/secrets/jwt_private_key:ro
+      - ./secrets/jwt_public_key:/run/secrets/jwt_public_key:ro
     ports:
       - "8006:8000"
 
@@ -244,6 +248,8 @@ services:
       AUTH_SERVICE_URL: http://auth-service:8000
       GEO_SERVICE_URL: http://geo-service:8000
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+    volumes:
+      - ./secrets/jwt_public_key:/run/secrets/jwt_public_key:ro
     ports:
       - "8080:8000"
 

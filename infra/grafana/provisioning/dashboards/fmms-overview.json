@@ -1,0 +1,66 @@
+{
+  "uid": "fmms-overview",
+  "title": "FMMS Overview",
+  "tags": ["fmms"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Messages/sec (gateway)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus"},
+          "expr": "rate(gateway_messages_accepted_total[1m])",
+          "legendFormat": "accepted/s"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Alerts emitted/sec",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus"},
+          "expr": "rate(rule_alerts_emitted_total[1m])",
+          "legendFormat": "{{kind}}/{{severity}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Telemetry write latency (p95)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus"},
+          "expr": "histogram_quantile(0.95, rate(telemetry_write_latency_seconds_bucket[1m]))",
+          "legendFormat": "p95 write latency"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Active (unacked) alerts",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus"},
+          "expr": "sum(alert_service_alerts_persisted_total) - sum(alert_service_alerts_deduplicated_total)",
+          "legendFormat": "total alerts"
+        }
+      ]
+    }
+  ]
+}

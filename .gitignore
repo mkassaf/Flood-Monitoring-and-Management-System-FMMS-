@@ -1,0 +1,41 @@
+# env / secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# node / frontend
+node_modules/
+dist/
+.vite/
+
+# ide
+.idea/
+.vscode/
+*.swp
+
+# os
+.DS_Store
+Thumbs.db
+
+# energy & load test outputs
+tools/energy/runs/
+tools/load/results/
+
+# docker volumes (we don't store local volume data in git)
+data/

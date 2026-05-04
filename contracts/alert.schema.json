@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fmms.local/contracts/alert/1.0.0",
+  "title": "FMMS Alert",
+  "description": "Canonical wire format for alerts produced by the rule engine and consumed by the alert service. Three Kafka topics share this schema differentiated by the 'kind' field: alerts.threshold, alerts.malfunction, alerts.priority.",
+  "type": "object",
+  "required": ["schema_version", "alert_id", "kind", "severity", "area_id", "ts_event", "ts_emitted", "context"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "alert_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Globally unique. Used by the alert service for deduplication."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["threshold", "malfunction", "priority"],
+      "description": "threshold = parameter exceeded a configured limit (FR-06); malfunction = sensor down or status=0 (FR-07); priority = imminent danger / escalation (FR-09 / FR-08)."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Drives UI styling and routing. 'high' bypasses standard processing (architecture.md §8 Performance/prioritize-events tactic)."
+    },
+    "area_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sensor_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Originating sensor, when applicable. Null for area-level alerts (e.g. a redundancy escalation that aggregates multiple sensors)."
+    },
+    "parameter": {
+      "type": ["string", "null"],
+      "enum": [
+        "water_level_m",
+        "river_flow_velocity_m_s",
+        "rainfall_mm_h",
+        "soil_saturation_pct",
+        "wind_speed_m_s",
+        "wind_direction_deg",
+        null
+      ],
+      "description": "Parameter that triggered the alert. Null for malfunction or area-level alerts."
+    },
+    "value": {
+      "type": ["number", "null"],
+      "description": "Measured value at the moment of the alert. Null for malfunction."
+    },
+    "threshold": {
+      "type": ["number", "null"],
+      "description": "Configured threshold the value crossed. Null for malfunction."
+    },
+    "ts_event": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Time of the originating sensor event."
+    },
+    "ts_emitted": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Time the rule engine produced this alert."
+    },
+    "context": {
+      "type": "object",
+      "description": "Kind-specific extras. Free-form but structured.",
+      "additionalProperties": true,
+      "properties": {
+        "redundancy_remaining": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "For malfunction alerts: count of still-operational sensors covering this parameter in the area. Drives FR-08 escalation."
+        },
+        "trend": {
+          "type": "string",
+          "enum": ["rising", "falling", "stable"],
+          "description": "For threshold alerts: short-window trend at the moment of breach."
+        },
+        "originating_alert_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "For priority alerts that escalate from a threshold or malfunction alert."
+        }
+      }
+    }
+  }
+}

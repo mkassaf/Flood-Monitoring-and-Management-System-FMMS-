@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fmms.local/contracts/telemetry-envelope/1.0.0",
+  "title": "FMMS Telemetry Envelope",
+  "description": "Canonical wire format for sensor measurements published by the sensor fleet over MQTT and forwarded onto the Kafka 'telemetry.{shard}' topics by the ingestion gateway. See architecture.md §7.1 for evolution rules.",
+  "type": "object",
+  "required": ["schema_version", "sensor_id", "area_id", "ts", "status", "mode", "measurements"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Pinned schema version. Backward-incompatible changes get a new minor or major and a new topic."
+    },
+    "sensor_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identifier for the sensor. Bound to area_id in geo-service."
+    },
+    "area_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Geographic area the sensor belongs to. Used as the Kafka partition key."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Sensor-side timestamp (UTC, ISO 8601). Subject to clock skew; see architecture.md §7.3. The ingestion gateway adds a server-side `ingested_at` separately."
+    },
+    "status": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "Operational status. 1 = healthy. 0 = self-reported fault. (FR-02)"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["nominal", "critical"],
+      "description": "Sensor-side mode flag. Drives transmission frequency at the sensor (FR-10). The system also makes its own classification in the rule engine."
+    },
+    "measurements": {
+      "type": "object",
+      "description": "Sensor readings. All numeric fields are optional (a sensor may not host every transducer), but at least one must be present.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "water_level_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 50,
+          "description": "Meters above local reference datum."
+        },
+        "river_flow_velocity_m_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "rainfall_mm_h": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500,
+          "description": "Cumulative rainfall over the last reporting window, normalized to mm/hour."
+        },
+        "soil_saturation_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "wind_speed_m_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "wind_direction_deg": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 360,
+          "description": "Compass bearing, 0 = North."
+        }
+      }
+    }
+  }
+}
